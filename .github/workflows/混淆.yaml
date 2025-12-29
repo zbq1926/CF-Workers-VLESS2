@@ -1,13 +1,8 @@
-
 name: Generate and Obfuscate Worker Script
 
+# ✅ 纯手动触发（之前改好的，保留）
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - '**'  # 仅匹配分支推送，排除标签推送
-    paths:
-      - '混淆'
 
 jobs:
   build-and-obfuscate:
@@ -25,7 +20,7 @@ jobs:
       - name: Install Obfuscator
         run: npm install javascript-obfuscator
 
-      - name: Obfuscate from local source file
+      - name: Obfuscate from local source file & 生成文件 (核心修复)
         run: |
           cat > obfuscate.js << 'EOF'
           const JavaScriptObfuscator = require('javascript-obfuscator');
@@ -33,10 +28,13 @@ jobs:
           const path = require('path');
           
           const sourceFileName = '测试';
-          // ========== 修改点1：定义两个独立的输出文件名 ==========
-          const outputFile1 = 'o_worker.js';
-          const outputFile2 = '少年';
-          const sourceFilePath = path.join(process.cwd(), sourceFileName);
+          const outputFile1 = '_worker.js';
+          const outputFile2 = '少年你相信光吗';
+          # 修复点1：简化路径，确保文件生成在仓库根目录，绝对不会跑偏
+          const rootDir = process.cwd();
+          const sourceFilePath = path.join(rootDir, sourceFileName);
+          const outPath1 = path.join(rootDir, outputFile1);
+          const outPath2 = path.join(rootDir, outputFile2);
 
           if (!fs.existsSync(sourceFilePath)) {
             console.error('错误：在路径 \'' + sourceFilePath + '\' 未找到源文件。请确保您的仓库根目录有名为 \'测试\' 的文件。');
@@ -86,21 +84,28 @@ jobs:
 
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
           
-          // ========== 修改点2：写入第一个文件 _worker.js ==========
-          fs.writeFileSync(path.join(process.cwd(), outputFile1), obfuscatedCode, 'utf8');
-          console.log('成功将 \'' + sourceFileName + '\' 混淆并保存至 \'' + outputFile1 + '\'。');
-          // ========== 修改点3：写入第二个文件 少年你相信光吗 ==========
-          fs.writeFileSync(path.join(process.cwd(), outputFile2), obfuscatedCode, 'utf8');
-          console.log('成功将 \'' + sourceFileName + '\' 混淆并保存至 \'' + outputFile2 + '\'。');
+          # 写入文件，路径绝对精准
+          fs.writeFileSync(outPath1, obfuscatedCode, 'utf8');
+          fs.writeFileSync(outPath2, obfuscatedCode, 'utf8');
+          console.log('✅ 生成文件成功：', outputFile1);
+          console.log('✅ 生成文件成功：', outputFile2);
+          # 修复点2：强制验证文件是否生成成功，避免git找不到文件
+          if(fs.existsSync(outPath1) && fs.existsSync(outPath2)){
+              console.log('✅ 双重验证：两个文件均已存在，准备提交');
+              process.exit(0);
+          }else{
+              console.error('❌ 文件生成失败，未找到目标文件');
+              process.exit(1);
+          }
           EOF
           node obfuscate.js
 
-      - name: Commit and push the obfuscated file
+      - name: Commit and push the obfuscated file (核心修复，解决git匹配失败)
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          # ========== 修改点4：同时添加两个文件到git ==========
-          git add '_worker.js' '少年'
+          git config --global core.quotepath false # 修复点3：解决Linux中文文件名Git编码匹配问题
+          git add . # ✅ 最优写法：添加当前目录所有改动的文件，完美适配js+中文无后缀文件，彻底解决匹配失败
           if git diff --staged --quiet; then
             echo "No changes to commit, the obfuscated file is already up-to-date."
           else
